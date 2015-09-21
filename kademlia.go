@@ -1,161 +1,19 @@
 package kademlia
 
 import (
-	"container/heap"
-	"container/list"
-	"encoding/hex"
-	"http"
-	"iterables"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"rand"
-	"sort"
+	"net/rpc"
 )
-
-const IDLength = 20
-const BucketSize = 20
-
-type NodeID [IDLength]byte
-
-type Contact struct {
-	id NodeID
-}
-
-type RoutingTable struct {
-	node    NodeID
-	buckets [IDLength * 8]*list.List
-}
-
-func NewNodeID(data string) (ret NodeID) {
-	decoded, _ := hex.DecodeString(data)
-	for i := 0; i < IDLength; i++ {
-		ret[i] = decoded[i]
-	}
-	return
-}
-
-func NewRandomNodeID() (ret NodeID) {
-	for i := 0; i < IDLength; i++ {
-		ret[i] = uint8(rand.Intn(256))
-	}
-	return
-}
-
-func (node NodeID) String() string {
-	return hex.EncodeToString(node[0:IDLength])
-}
-
-func (node NodeID) Equals(other NodeID) bool {
-	for i := 0; i < IDLength; i++ {
-		if node[i] != other[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func (node NodeID) Less(other interface{}) bool {
-	for i := 0; i < IDLength; i++ {
-		if node[i] != other.(NodeID)[i] {
-			return node[i] < other.(NodeID)[i]
-		}
-	}
-
-	return false
-}
-
-func (node NodeID) Xor(other NodeID) (ret NodeID) {
-	for i := 0; i < IDLength; i++ {
-		ret[i] = node[i] ^ other[i]
-	}
-	return
-}
-
-func (node NodeID) PrefixLen() (ret int) {
-	for i := 0; i < IDLength; i++ {
-		for j := 0; j < 8; j++ {
-			if (node[i]>>uint8(7-j))&0x1 != 0 {
-				return 8*i + j
-			}
-		}
-	}
-	return 8*IDLength - 1
-}
-
-func NewRoutingTable(node NodeID) (ret RoutingTable) {
-	for i := 0; i < IDLength*8; i++ {
-		ret.buckets[i] = list.New()
-	}
-	ret.node = node
-	return
-}
-
-func (table *RoutingTable) Update(contact *Contact) {
-	prefix_length := contact.id.Xor(table.node.id).PrefixLen()
-	bucket := table.buckets[prefix_length]
-	element := iterable.Find(bucket, func(x interface{}) bool {
-		return x.(*Contact).id.Equals(table.node.id)
-	})
-	if element == nil {
-		if bucket.Len() <= BucketSize {
-			bucket.PushFront(contact)
-		}
-		// TODO(@cfromknecht): evict least recently seen node if it does not respond
-		// to a ping
-	} else {
-		bucket.MoveToFront(element.(*list.Element))
-	}
-}
-
-type ContactRecord struct {
-	node    *Contact
-	sortKey NodeID
-}
-
-func (rec *ContactRecord) Less(other interface{}) bool {
-	return rec.sortKey.Less(other.(*ContactRecord).sortKey)
-}
-
-func copyToVector(start, end *list.Element, vec *vector.Vector, target NodeID) {
-	for elt := start; elt != end; elt = elt.Next() {
-		contact := elt.Value.(*Contact)
-		vec.Push(&ContactRecord{contact, contact.id.xor(target)})
-	}
-}
-
-func (table *RoutingTable) FindClosest(target NodeID, count int) (ret *vector.Vector) {
-	ret = new(vector.Vector).Resize(0, count)
-
-	bucket_num := target.Xor(table.node.id).PrefixLen()
-	bucket := table.buckets[bucket_num]
-	copyToVector(bucket.Front(), nil, ret, target)
-
-	for i := 1; (bucket_num-i >= 0 || bucket_num+i < IdLength*8) && ret.Len() < count; i++ {
-		if bucket_num-i >= 0 {
-			bucket = table.buckets[bucket_num-i]
-			copyToVector(bucket.Front(), nil, ret, target)
-		}
-		if bucket_num+i < IdLength*8 {
-			bucket = table.buckets[bucket_num+i]
-			copyToVector(bucket.Front(), nil, ret, target)
-		}
-	}
-
-	sort.Sort(ret)
-	if ret.Len() > count {
-		ret.Cut(count, ret.Len())
-	}
-
-	return
-}
 
 type Kademlia struct {
 	routes    *RoutingTable
 	NetworkID string
 }
 
-func NewKademlia(self *Contact, networkID string) (ret *Kademlia) {
+func NewKademlia(self Contact, networkID string) (ret *Kademlia) {
 	ret = new(Kademlia)
 	ret.routes = NewRoutingTable(self)
 	ret.NetworkID = networkID
@@ -163,20 +21,18 @@ func NewKademlia(self *Contact, networkID string) (ret *Kademlia) {
 }
 
 type RPCHeader struct {
-	Sender    *Contact
+	Sender    Contact
 	NetworkID string
 }
 
-func (k *Kademlia) HandleRPC(request, response *RPCHeader) os.Error {
+func (k *Kademlia) HandleRPC(request, response *RPCHeader) error {
 	if request.NetworkID != k.NetworkID {
-		return os.Error(fmt.Sprintf("Expected Network ID %s, go %s", k.NetworkID, request.NetworkID))
+		return errors.New(fmt.Sprintf("Expected Network ID %s, go %s", k.NetworkID, request.NetworkID))
 	}
 
-	if request.sender != nil {
-		k.routes.Update(request.Sender)
-	}
+	k.routes.UpdateChan <- request.Sender
 
-	response.Sneder = &k.routes.node
+	response.Sender = k.routes.self
 	return nil
 }
 
@@ -192,20 +48,19 @@ type PingResponse struct {
 	RPCHeader
 }
 
-func (kc *KademliaCore) Ping(args *PingRequest, response *PingResponse) (err os.Error) {
-	if err = kc.kad.HandleRPC(&args.RPCHeader, &response.RPCHeader); err == nil {
-		log.Stderr("Ping from %s\n", args.RPCHeader)
-	}
+func (kc *KademliaCore) Ping(args *PingRequest, response *PingResponse) (err error) {
+	err = kc.kad.HandleRPC(&args.RPCHeader, &response.RPCHeader)
 	return
 }
 
-func (k *Kademlia) Serve() (err os.Error) {
+func (k *Kademlia) Serve() (err error) {
 	rpc.Register(&KademliaCore{k})
 
 	rpc.HandleHTTP()
-	if l, err := net.Listen("tcp", k.routes.node.address); err == nil {
-		go http.Serve(l, nil)
-	}
+	l, err := net.Listen("tcp", k.routes.self.address)
+	check(err)
+
+	go http.Serve(l, nil)
 
 	return
 }
@@ -217,85 +72,82 @@ type FindNodeRequest struct {
 
 type FindNodeResponse struct {
 	RPCHeader
-	contacts []Contact
+	contacts Contacts
 }
 
-func (kc *KademliaCore) FindNode(args *FindNodeRequest, response *FindNodeResponse) (err os.Error) {
+func (kc *KademliaCore) FindNode(args *FindNodeRequest, response *FindNodeResponse) (err error) {
 	if err = kc.kad.HandleRPC(&args.RPCHeader, &response.RPCHeader); err == nil {
-		contacts := kc.kad.routes.FindClosest(args.target, BucketSize)
-		response.contacts = make([]Contact, contacts.Len())
-
-		for i := 0; i < contacts.Len(); i++ {
-			response.contacts[i] = *contacts.At(i).(*ContactRecord).node
-		}
+		//contactRecords := kc.kad.routes.FindClosest(args.target, BucketSize)
+		response.contacts = Contacts{}
 	}
 
 	return
 }
 
-func (k *Kademlia) Call(contact *Contact, method string, args, reply interface{}) (err os.Error) {
+func (k *Kademlia) Call(contact Contact, method string, args, reply interface{}) (err error) {
 	if client, err := rpc.DialHTTP("tcp", contact.address); err == nil {
 		if err = client.Call(method, args, reply); err == nil {
-			k.routes.Update(contact)
+			k.routes.UpdateChan <- contact
 		}
 	}
 	return
 }
 
-func (k *Kademlia) sendQuery(node *Contact, target NodeID, done chan []Contact) {
-	args := FindNodeRequest{RPCHeader{&k.routes.node, k.NetworkID}, target}
+func (k *Kademlia) sendQuery(node Contact, target NodeID, done chan Contacts) {
+	args := FindNodeRequest{RPCHeader{k.routes.self, k.NetworkID}, target}
 	reply := FindNodeResponse{}
 
 	if err := k.Call(node, "KademliaCore.FindNode", &args, &reply); err == nil {
+		fmt.Println("Returning contacts: ", reply.contacts)
 		done <- reply.contacts
 	} else {
+		fmt.Println("Returning empty contacts")
 		done <- []Contact{}
 	}
 }
 
-func (k *Kademlia) IterativeFindNode(target NodeID, delta int) (ret *vector.Vector) {
-	done := make(chan []Contact)
+/*
+func (k *Kademlia) IterativeFindNode(target Contact, delta int) (ret ContactRecords) {
+		done := make(chan Contacts)
 
-	ret = new(vector.Vector).Resize(0, BucketSize)
+		ret = make(ContactRecords, BucketSize)
 
-	frontier := new(vector.Vector).Resize(0, BucketSize)
+		frontier := new(Contacts)
 
-	seen := make(map[string]bool)
+		seen := make(map[string]bool)
 
-	for node := range k.routes.FindClosest(target, delta).Iter() {
-		record := node.(*ContactRecord)
-		ret.Push(record)
-		heap.Push(frontier, record.node)
-		seen[record.node.id.String()] = true
-	}
+		for _, record := range k.routes.FindClosest(target.id, delta) {
+			ret = append(ret, record)
+			frontier.Push(record.Contact)
+			seen[record.id.String()] = true
+		}
 
-	pending := 0
-	for i = 0; i < delta && frontier.Len() > 0; i++ {
-		pending++
-		go k.sendQuery(fontier.Pop().(*Contact), target, done)
-	}
+		pending := 0
+		for i := 0; i < delta && frontier.Len() > 0; i++ {
+			pending++
+			go k.sendQuery(frontier.Pop().(Contact), target.id, done)
+		}
 
-	for pending > 0 {
-		nodes := <-done
-		pending--
-		for _, node := range nodes {
-			if _, ok := seen[node.id.String()]; ok == false {
-				ret.Push(&ContactRecord{&node, node.id.Xor(target)})
-				heap.Push(frontier, node)
-				seen[node.id.String()] = true
+		for pending > 0 {
+			contacts := <-done
+			pending--
+			for _, contact := range contacts {
+				if _, ok := seen[contact.id.String()]; ok == false {
+					ret = append(ret, ContactRecord{contact, contact.id.Xor(target.id)})
+					frontier.Push(contact)
+					seen[contact.id.String()] = true
+				}
+			}
+
+			for pending < delta && frontier.Len() > 0 {
+				go k.sendQuery(frontier.Pop().(Contact), target.id, done)
+				pending++
 			}
 		}
 
-		for pending < delta && frontier.Len() > 0 {
-			go k.sendQuery(frontier.Pop().(*Contact), target, done)
-			pending++
-		}
-	}
+		sort.Sort(ret)
+		ret = ret[0:BucketSize]
 
-	sort.Sort(ret)
-	if ret.Length() > BucketSize {
-		ret.Cut(BucketSize, ret.Len())
-	}
-
-	return
+		return
 }
+*/
