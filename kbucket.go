@@ -21,22 +21,22 @@ func NewKBucket() (kb *KBucket) {
 		make(chan Contact),
 		make(chan Contact),
 	}
-	go kb.Run()
+	go kb.run()
 	return
 }
 
-func (kb *KBucket) Run() {
+func (kb *KBucket) run() {
 	for {
 		select {
 		case contact := <-kb.UpdateChan:
-			kb.Update(contact)
+			kb.update(contact)
 		case contact := <-kb.LookupRequestChan:
-			kb.LookupResponseChan <- kb.Lookup(contact)
+			kb.LookupResponseChan <- kb.lookup(contact)
 		}
 	}
 }
 
-func (kb *KBucket) Update(contact Contact) {
+func (kb *KBucket) update(contact Contact) {
 	foundPtr := kb.findContact(contact)
 	if foundPtr != nil {
 		// If entry is already in KBucket, move it to back of list
@@ -53,7 +53,7 @@ func (kb *KBucket) Update(contact Contact) {
 	}
 }
 
-func (kb *KBucket) Lookup(contact Contact) Contact {
+func (kb *KBucket) lookup(contact Contact) Contact {
 	return contact
 }
 

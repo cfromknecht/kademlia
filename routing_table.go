@@ -20,12 +20,12 @@ func NewRoutingTable(self Contact) (rt *RoutingTable) {
 	}
 
 	rt.UpdateChan = make(chan Contact)
-	go rt.Run()
+	go rt.run()
 
 	return
 }
 
-func (rt *RoutingTable) Run() {
+func (rt *RoutingTable) run() {
 	for {
 		select {
 		case contact := <-rt.UpdateChan:
