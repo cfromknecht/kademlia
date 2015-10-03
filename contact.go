@@ -5,20 +5,16 @@ package kademlia
  */
 
 type Contact struct {
-	id      NodeID
-	address string
+	ID      NodeID
+	Address string
 }
 
 func NewContact(node NodeID, address string) Contact {
-	return Contact{node, address}
+	return Contact{
+		ID:      node,
+		Address: address,
+	}
 }
-
-/*
- * Getters
- */
-
-func (c Contact) ID() NodeID      { return c.id }
-func (c Contact) Address() string { return c.address }
 
 /*
  * Contacts
@@ -27,7 +23,7 @@ func (c Contact) Address() string { return c.address }
 type Contacts []Contact
 
 func (h Contacts) Len() int           { return len(h) }
-func (h Contacts) Less(i, j int) bool { return h[i].ID().Less(h[j].ID()) }
+func (h Contacts) Less(i, j int) bool { return h[i].ID.Less(h[j].ID) }
 func (h Contacts) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *Contacts) Push(x interface{}) {

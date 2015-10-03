@@ -57,7 +57,7 @@ func (node NodeID) Xor(other NodeID) (ret NodeID) {
 	return
 }
 
-func (node NodeID) PrefixLen(other NodeID) (ret int) {
+func (node NodeID) PrefixLen(other NodeID) int {
 	distance := node.Xor(other)
 	for i := 0; i < IDLength; i++ {
 		for j := 0; j < 8; j++ {

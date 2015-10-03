@@ -42,13 +42,13 @@ func TestFindByID(t *testing.T) {
 
 	firstContact := randomContact()
 
-	if foundPtr := kb.findById(firstContact.id); foundPtr != nil {
+	if foundPtr := kb.findById(firstContact.ID); foundPtr != nil {
 		t.Error("KBucket is empty, findById should return nil")
 	}
 
 	kb.PushBack(firstContact)
 
-	foundPtr := kb.findById(firstContact.id)
+	foundPtr := kb.findById(firstContact.ID)
 	if foundPtr == nil || foundPtr.Value.(*Contact) != firstContact {
 		t.Error("findById should return non-nil Contact equal to firstContact")
 	}
@@ -56,7 +56,7 @@ func TestFindByID(t *testing.T) {
 	// add contact to beginning of slice
 	kb.PushFront(randomContact())
 
-	foundPtr = kb.findById(firstContact.id)
+	foundPtr = kb.findById(firstContact.ID)
 	if foundPtr == nil || foundPtr.Value.(*Contact) != firstContact {
 		t.Error("findById should return non-nil Contact equal to firstContact")
 	}

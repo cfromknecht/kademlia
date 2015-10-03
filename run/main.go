@@ -17,7 +17,7 @@ func parseFlags() (port *int, firstContact *kademlia.Contact) {
 		firstID = nil
 		firstIP = nil
 	} else {
-		firstContact = new(kademlia.Contact)
+		firstContact = &kademlia.Contact{}
 		*firstContact = kademlia.NewContact(kademlia.NewNodeID(*firstID), *firstIP)
 	}
 
@@ -44,8 +44,21 @@ func main() {
 	selfNetwork.Serve()
 
 	if firstContact != nil {
-		contactRecords := selfNetwork.IterativeFindNode(*firstContact, 5)
-		fmt.Println("Contacts: %s", contactRecords)
+		/*
+			err := selfNetwork.Ping(*firstContact)
+			if err != nil {
+				fmt.Println("Ping error:", err)
+			} else {
+				fmt.Println(*firstContact, "is online")
+			}
+		*/
+
+		contacts, err := selfNetwork.Bootstrap(*firstContact, self)
+		if err != nil {
+			fmt.Println("FindNode error:", err)
+		} else {
+			fmt.Println("Closest nodes to", firstContact.Address, firstContact.ID, contacts)
+		}
 	}
 
 	done := make(chan bool)

@@ -12,11 +12,11 @@ func TestNewContact(t *testing.T) {
 
 	contact := kademlia.NewContact(expectedNodeID, expectedAddress)
 
-	if expectedNodeID != contact.ID() {
-		t.Error(fmt.Sprintf("Expected ID %s, got %s", expectedNodeID, contact.ID()))
+	if expectedNodeID != contact.ID {
+		t.Error(fmt.Sprintf("Expected ID %s, got %s", expectedNodeID, contact.ID))
 	}
-	if expectedAddress != contact.Address() {
-		t.Error(fmt.Sprintf("Expected address %s, got %s", expectedAddress, contact.Address()))
+	if expectedAddress != contact.Address {
+		t.Error(fmt.Sprintf("Expected address %s, got %s", expectedAddress, contact.Address))
 	}
 }
 
@@ -106,7 +106,7 @@ func TestContactsPush(t *testing.T) {
 	if contacts.Len() != 1 {
 		t.Error("Contact was not pushed to Contacts array")
 	}
-	if contacts[0].ID() != contactToAdd.ID() || contacts[0].Address() != contactToAdd.Address() {
+	if contacts[0].ID != contactToAdd.ID || contacts[0].Address != contactToAdd.Address {
 		t.Error("Contact not copied correctly during Push")
 	}
 }
@@ -120,7 +120,7 @@ func TestContactsPop(t *testing.T) {
 	if contacts.Len() != 0 {
 		t.Error("Contact was not popped from Contacts array")
 	}
-	if contactToRemove.ID() != removedContact.ID() || contactToRemove.Address() != removedContact.Address() {
+	if contactToRemove.ID != removedContact.ID || contactToRemove.Address != removedContact.Address {
 		t.Error("Contact was not copied correctly during Pop")
 	}
 }

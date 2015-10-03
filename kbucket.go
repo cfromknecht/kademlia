@@ -2,27 +2,22 @@ package kademlia
 
 import (
 	"container/list"
+	"fmt"
 )
 
 type ContactList *list.List
 
 type KBucket struct {
 	*list.List
-	UpdateChan         chan Contact
-	LookupRequestChan  chan Contact
-	LookupResponseChan chan Contact
+	UpdateChan chan Contact
 }
 
-func NewKBucket() (kb *KBucket) {
-	kb = new(KBucket)
-	*kb = KBucket{
+func NewKBucket() *KBucket {
+	kb := &KBucket{
 		list.New(),
 		make(chan Contact),
-		make(chan Contact),
-		make(chan Contact),
 	}
-	go kb.run()
-	return
+	return kb
 }
 
 func (kb *KBucket) run() {
@@ -30,14 +25,13 @@ func (kb *KBucket) run() {
 		select {
 		case contact := <-kb.UpdateChan:
 			kb.update(contact)
-		case contact := <-kb.LookupRequestChan:
-			kb.LookupResponseChan <- kb.lookup(contact)
 		}
 	}
 }
 
 func (kb *KBucket) update(contact Contact) {
 	foundPtr := kb.findContact(contact)
+	fmt.Println("Found?", foundPtr)
 	if foundPtr != nil {
 		// If entry is already in KBucket, move it to back of list
 		kb.MoveToBack(foundPtr)
@@ -49,21 +43,27 @@ func (kb *KBucket) update(contact Contact) {
 		//kb.PushBack(foundPtr)
 	} else {
 		// KBucket is not full, simply add contact
-		kb.PushBack(foundPtr)
+		fmt.Println("Pushing contact", contact)
+		kb.PushBack(contact)
 	}
 }
 
-func (kb *KBucket) lookup(contact Contact) Contact {
-	return contact
-}
-
 func (kb KBucket) findContact(contact Contact) *list.Element {
-	return kb.findById(contact.id)
+	return kb.findById(contact.ID)
 }
 
 func (kb KBucket) findById(nodeID NodeID) *list.Element {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+		}
+	}()
+
 	for el := kb.Front(); el != nil; el = el.Next() {
-		if nodeID == el.Value.(*Contact).id {
+		fmt.Println("el:", el, "value:", el.Value, "type:", fmt.Sprintf("%T",
+			el.Value))
+		if nodeID == el.Value.(Contact).ID {
+			fmt.Println("Returning el")
 			return el
 		}
 	}
