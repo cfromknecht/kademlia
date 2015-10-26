@@ -35,7 +35,7 @@ func TestUpdate(t *testing.T) {
 		table := NewRoutingTable(tt.self)
 
 		for _, contact := range tt.updates {
-			table.UpdateChan <- contact
+			table.Update(contact)
 		}
 	}
 }

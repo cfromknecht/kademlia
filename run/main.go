@@ -44,21 +44,15 @@ func main() {
 	selfNetwork.Serve()
 
 	if firstContact != nil {
-		/*
-			err := selfNetwork.Ping(*firstContact)
-			if err != nil {
-				fmt.Println("Ping error:", err)
-			} else {
-				fmt.Println(*firstContact, "is online")
-			}
-		*/
-
 		contacts, err := selfNetwork.Bootstrap(*firstContact, self)
 		if err != nil {
-			fmt.Println("FindNode error:", err)
-		} else {
-			fmt.Println("Closest nodes to", firstContact.Address, firstContact.ID, contacts)
+			fmt.Println("Bootstrap error:", err)
 		}
+
+		final := make(chan kademlia.Contacts)
+		selfNetwork.IterativeFindNode(firstContact.ID, kademlia.Delta, final)
+		contacts = <-final
+		fmt.Println("Iterative Find Node:", contacts)
 	}
 
 	done := make(chan bool)

@@ -1,6 +1,7 @@
 package kademlia
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -23,7 +24,9 @@ func TestFindContact(t *testing.T) {
 
 	kb.PushBack(firstContact)
 
+	fmt.Println("finding contact")
 	foundPtr := kb.findContact(*firstContact)
+	fmt.Println("found contact")
 	if foundPtr == nil || foundPtr.Value.(*Contact) != firstContact {
 		t.Error("findContact should return non-nil Contact equal to firstContact")
 	}

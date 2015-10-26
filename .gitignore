@@ -23,5 +23,9 @@ _testmain.go
 *.test
 *.prof
 
+#Database
+
+db/*
+
 # vim swap files
 .*.sw*

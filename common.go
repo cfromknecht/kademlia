@@ -1,7 +1,7 @@
 package kademlia
 
 const (
-	Alpha         = 3
+	Delta         = 3
 	IDLength      = 20
 	IDBytesLength = 8 * IDLength
 	BucketSize    = 20

@@ -1,23 +1,43 @@
 package kademlia
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
+	db "github.com/syndtr/goleveldb/leveldb"
+	"log"
 	"net"
 	"net/rpc"
 	"time"
 )
 
+const (
+	VALUES_DB_PATH = "db/values-"
+)
+
 type Kademlia struct {
 	routes    *RoutingTable
+	valuesDB  *db.DB
 	NetworkID string
 }
 
 func NewKademlia(self Contact, networkID string) *Kademlia {
 	ret := &Kademlia{
 		routes:    NewRoutingTable(self),
+		valuesDB:  nil,
 		NetworkID: networkID,
 	}
+
+	hexID := hex.EncodeToString(self.ID[:])
+	conn, err := db.OpenFile(VALUES_DB_PATH+hexID, nil)
+	if err != nil {
+		log.Println(err)
+		panic("Unable to open values database")
+	}
+
+	defer conn.Close()
+	ret.valuesDB = conn
+
 	return ret
 }
 
@@ -34,57 +54,11 @@ func (k *Kademlia) HandleRPC(request RPCHeader, response *RPCHeader) error {
 	}
 
 	// Update routing table for all incoming RPCs
-	k.routes.UpdateChan <- request.Sender
+	k.routes.Update(request.Sender)
 	// Pong with sender
 	response.Sender = k.routes.self
 
 	return nil
-}
-
-func (k *Kademlia) Ping(target Contact) error {
-	client, err := dialContact(target)
-	if err != nil {
-		return err
-	}
-
-	req := k.NewPingRequest()
-	res := PingResponse{}
-
-	return client.Call("KademliaCore.PingRPC", &req, &res)
-}
-
-func (k *Kademlia) Bootstrap(target, self Contact) ([]Contact, error) {
-	client, err := dialContact(target)
-	if err != nil {
-		return nil, err
-	}
-
-	req := k.NewFindNodeRequest(self)
-	res := FindNodeResponse{}
-
-	err = client.Call("KademliaCore.FindNodeRPC", &req, &res)
-	if err != nil {
-		return nil, err
-	}
-
-	return res.Contacts, nil
-}
-
-func (k *Kademlia) FindNode(target Contact) ([]Contact, error) {
-	client, err := dialContact(target)
-	if err != nil {
-		return nil, err
-	}
-
-	req := k.NewFindNodeRequest(target)
-	res := FindNodeResponse{}
-
-	err = client.Call("KademliaCore.FindNodeRPC", &req, &res)
-	if err != nil {
-		return nil, err
-	}
-
-	return res.Contacts, nil
 }
 
 func dialContact(contact Contact) (*rpc.Client, error) {
@@ -116,69 +90,4 @@ func (k *Kademlia) Serve() error {
 
 type KademliaCore struct {
 	kad *Kademlia
-}
-
-/*
- * PING
- */
-
-type PingRequest struct {
-	RPCHeader
-}
-
-func (k *Kademlia) NewPingRequest() PingRequest {
-	return PingRequest{
-		RPCHeader{
-			Sender:    k.routes.self,
-			NetworkID: k.NetworkID,
-		},
-	}
-}
-
-type PingResponse struct {
-	RPCHeader
-}
-
-func (kc *KademliaCore) PingRPC(req PingRequest, res *PingResponse) error {
-	return kc.kad.HandleRPC(req.RPCHeader, &res.RPCHeader)
-}
-
-/*
- * FIND NODE
- */
-
-type FindNodeRequest struct {
-	RPCHeader
-	Target Contact
-}
-
-func (k *Kademlia) NewFindNodeRequest(target Contact) FindNodeRequest {
-	return FindNodeRequest{
-		RPCHeader: RPCHeader{
-			Sender:    k.routes.self,
-			NetworkID: k.NetworkID,
-		},
-		Target: target,
-	}
-}
-
-type FindNodeResponse struct {
-	RPCHeader
-	Contacts Contacts
-}
-
-func (kc *KademliaCore) FindNodeRPC(req FindNodeRequest, res *FindNodeResponse) error {
-	err := kc.kad.HandleRPC(req.RPCHeader, &res.RPCHeader)
-	if err != nil {
-		return err
-	}
-
-	contactsReturnChan := make(chan Contacts)
-	kc.kad.routes.LookupRequestChan <- contactsReturnChan
-	contactsReturnChan <- Contacts{req.Target}
-
-	contacts := <-contactsReturnChan
-	res.Contacts = contacts
-
-	return nil
 }
