@@ -46,7 +46,7 @@ func (kb KBucket) findById(nodeID NodeID) *list.Element {
 	}()
 
 	for el := kb.Front(); el != nil; el = el.Next() {
-		if nodeID == el.Value.(Contact).ID {
+		if nodeID == el.Value.(*Contact).ID {
 			return el
 		}
 	}
